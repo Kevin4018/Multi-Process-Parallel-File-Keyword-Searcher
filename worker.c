@@ -9,7 +9,7 @@
 
 #define LINE_SIZE 1024
 
-static int count_keyword_in_file(const char *filename, const char *keyword) {
+int count_keyword_in_file(const char *filename, const char *keyword) {
     FILE *fp = fopen(filename, "r");
     if (fp == NULL) {
         return -1;
