@@ -5,6 +5,7 @@
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <errno.h>
+#include <signal.h>
 
 #include "protocol.h"
 #include "worker.h"
@@ -13,12 +14,12 @@
 #define NUM_WORKERS 3
 
 typedef struct {
-    int task_write_fd;     // parent -> worker
-    int result_read_fd;    // worker -> parent
+    int task_write_fd;
+    int result_read_fd;
     pid_t pid;
     int worker_id;
-    int busy;              // 0 = idle, 1 = processing a job
-    int alive;             // 1 = alive, 0 = dead/unusable
+    int busy;
+    int alive;
 } worker_info_t;
 
 static void usage(const char *progname);
@@ -40,6 +41,11 @@ static void print_summary(int total_files, int files_with_matches, int total_mat
 static void cleanup_workers(worker_info_t workers[], int num_workers);
 
 int main(int argc, char *argv[]) {
+    if (signal(SIGPIPE, SIG_IGN) == SIG_ERR) {
+        perror("signal SIGPIPE");
+        return EXIT_FAILURE;
+    }
+
     if (argc < 3) {
         usage(argv[0]);
         return EXIT_FAILURE;
@@ -53,6 +59,9 @@ int main(int argc, char *argv[]) {
     memset(workers, 0, sizeof(workers));
 
     for (int i = 0; i < NUM_WORKERS; i++) {
+        workers[i].task_write_fd = -1;
+        workers[i].result_read_fd = -1;
+        workers[i].pid = -1;
         workers[i].worker_id = i;
         workers[i].busy = 0;
         workers[i].alive = 1;
@@ -106,6 +115,7 @@ int main(int argc, char *argv[]) {
                           files[next_file_index], keyword) < 0) {
                 fprintf(stderr, "Failed to send task to worker %d\n", worker_idx);
                 workers[worker_idx].alive = 0;
+                workers[worker_idx].busy = 0;
             } else {
                 workers[worker_idx].busy = 1;
                 next_file_index++;
@@ -118,6 +128,7 @@ int main(int argc, char *argv[]) {
         if (workers[i].alive) {
             if (send_terminate(&workers[i]) < 0) {
                 fprintf(stderr, "Warning: failed to terminate worker %d cleanly\n", i);
+                workers[i].alive = 0;
             }
         }
     }
@@ -143,8 +154,12 @@ static int spawn_worker(worker_info_t *worker) {
 
     if (pipe(result_pipe) < 0) {
         perror("pipe result_pipe");
-        close(task_pipe[0]);
-        close(task_pipe[1]);
+        if (close(task_pipe[0]) < 0) {
+            perror("close task_pipe[0]");
+        }
+        if (close(task_pipe[1]) < 0) {
+            perror("close task_pipe[1]");
+        }
         return -1;
     }
 
@@ -152,28 +167,48 @@ static int spawn_worker(worker_info_t *worker) {
     if (pid < 0) {
         perror("fork");
 
-        close(task_pipe[0]);
-        close(task_pipe[1]);
-        close(result_pipe[0]);
-        close(result_pipe[1]);
+        if (close(task_pipe[0]) < 0) {
+            perror("close task_pipe[0]");
+        }
+        if (close(task_pipe[1]) < 0) {
+            perror("close task_pipe[1]");
+        }
+        if (close(result_pipe[0]) < 0) {
+            perror("close result_pipe[0]");
+        }
+        if (close(result_pipe[1]) < 0) {
+            perror("close result_pipe[1]");
+        }
         return -1;
     }
 
     if (pid == 0) {
-        // child
-        close(task_pipe[1]);     // child reads tasks
-        close(result_pipe[0]);   // child writes results
+        if (close(task_pipe[1]) < 0) {
+            perror("close child task_pipe[1]");
+            _exit(EXIT_FAILURE);
+        }
+        if (close(result_pipe[0]) < 0) {
+            perror("close child result_pipe[0]");
+            _exit(EXIT_FAILURE);
+        }
 
         run_worker(worker->worker_id, task_pipe[0], result_pipe[1]);
 
-        close(task_pipe[0]);
-        close(result_pipe[1]);
+        if (close(task_pipe[0]) < 0) {
+            perror("close child task_pipe[0]");
+        }
+        if (close(result_pipe[1]) < 0) {
+            perror("close child result_pipe[1]");
+        }
         _exit(EXIT_SUCCESS);
     }
 
-    // parent
-    close(task_pipe[0]);       // parent writes tasks
-    close(result_pipe[1]);     // parent reads results
+    if (close(task_pipe[0]) < 0) {
+        perror("close parent task_pipe[0]");
+    }
+    if (close(result_pipe[1]) < 0) {
+        perror("close parent result_pipe[1]");
+    }
 
     worker->task_write_fd = task_pipe[1];
     worker->result_read_fd = result_pipe[0];
@@ -231,6 +266,8 @@ static int dispatch_initial_tasks(worker_info_t workers[],
         }
 
         if (send_task(&workers[i], *next_job_id, files[*next_file_index], keyword) < 0) {
+            workers[i].alive = 0;
+            workers[i].busy = 0;
             return -1;
         }
 
@@ -288,19 +325,26 @@ static void print_summary(int total_files, int files_with_matches, int total_mat
 
 static void cleanup_workers(worker_info_t workers[], int num_workers) {
     for (int i = 0; i < num_workers; i++) {
-        if (workers[i].task_write_fd > 0) {
-            close(workers[i].task_write_fd);
+        if (workers[i].task_write_fd >= 0) {
+            if (close(workers[i].task_write_fd) < 0) {
+                perror("close task_write_fd");
+            }
             workers[i].task_write_fd = -1;
         }
-        if (workers[i].result_read_fd > 0) {
-            close(workers[i].result_read_fd);
+
+        if (workers[i].result_read_fd >= 0) {
+            if (close(workers[i].result_read_fd) < 0) {
+                perror("close result_read_fd");
+            }
             workers[i].result_read_fd = -1;
         }
     }
 
     for (int i = 0; i < num_workers; i++) {
         if (workers[i].pid > 0) {
-            waitpid(workers[i].pid, NULL, 0);
+            if (waitpid(workers[i].pid, NULL, 0) < 0) {
+                perror("waitpid");
+            }
         }
     }
 }
