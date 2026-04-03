@@ -246,37 +246,44 @@ static int find_result_source(worker_info_t workers[],
                               int num_workers,
                               result_msg_t *result) {
     for (;;) {
-        for (int i = 0; i < num_workers; i++) {
-            if (!workers[i].alive || !workers[i].busy) {
-                continue;
-            }
-
-            ssize_t n = read_full(workers[i].result_read_fd, result, sizeof(*result));
-            if (n == (ssize_t)sizeof(*result)) {
-                return i;
-            } else if (n == 0) {
-                fprintf(stderr, "Worker %d closed result pipe unexpectedly\n", i);
-                workers[i].alive = 0;
-                workers[i].busy = 0;
-            } else {
-                fprintf(stderr, "Significant read error from workers %d\n", i);
-                workers[i].alive = 0;
-                workers[i].busy = 0;
-            }
-        }
-
+        fd_set read_fds;
+        FD_ZERO(&read_fds);
+        int max_fd = -1;
         int any_busy = 0;
         for (int i = 0; i < num_workers; i++) {
             if (workers[i].alive && workers[i].busy) {
+                FD_SET(workers[i].result_read_fd, &read_fds);
+                if (workers[i].result_read_fd > max_fd) {
+                    max_fd = workers[i].result_read_fd;
+                }
                 any_busy = 1;
-                break;
             }
-        }
-
+        }    
         if (!any_busy) {
             return -1;
         }
-    }
+        if (select(max_fd + 1, &read_fds, NULL, NULL, NULL) < 0) {
+        if (errno == EINTR) continue;
+            perror("select failed");
+            return -1;
+        }
+        for (int i = 0; i < num_workers; i++) {
+            if (workers[i].alive && workers[i].busy && FD_ISSET(workers[i].result_read_fd, &read_fds)) {
+                ssize_t n = read_full(workers[i].result_read_fd, result, sizeof(*result));
+                if (n == (ssize_t)sizeof(*result)) {
+                    return i;
+                } else if (n == 0) {
+                    fprintf(stderr, "Worker %d closed result pipe unexpectedly\n", i);
+                    workers[i].alive = 0;
+                    workers[i].busy = 0;
+                } else {
+                    fprintf(stderr, "Significant read error from workers %d\n", i);
+                    workers[i].alive = 0;
+                    workers[i].busy = 0;
+                }
+            }
+        }  
+    }  
 }
 
 static void print_summary(int total_files, int files_with_matches, int total_matches) {
