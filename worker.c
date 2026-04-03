@@ -9,9 +9,10 @@
 
 #define LINE_SIZE 1024
 
-static int count_keyword_in_file(const char *filename, const char *keyword) {
+int count_keyword_in_file(const char *filename, const char *keyword) {
     FILE *fp = fopen(filename, "r");
     if (fp == NULL) {
+        perror("fopen");
         return -1;
     }
 
@@ -20,7 +21,10 @@ static int count_keyword_in_file(const char *filename, const char *keyword) {
     size_t keyword_len = strlen(keyword);
 
     if (keyword_len == 0) {
-        fclose(fp);
+        if (fclose(fp) != 0) {
+            perror("fclose");
+            return -1;
+        }
         return 0;
     }
 
@@ -33,7 +37,19 @@ static int count_keyword_in_file(const char *filename, const char *keyword) {
         }
     }
 
-    fclose(fp);
+    if (ferror(fp)) {
+        perror("fgets");
+        if (fclose(fp) != 0) {
+            perror("fclose");
+        }
+        return -1;
+    }
+
+    if (fclose(fp) != 0) {
+        perror("fclose");
+        return -1;
+    }
+
     return total_count;
 }
 
@@ -48,7 +64,7 @@ void run_worker(int worker_id, int task_read_fd, int result_write_fd) {
             break;
         }
 
-        if (bytes_read != sizeof(task_msg_t)) {
+        if (bytes_read != (ssize_t)sizeof(task_msg_t)) {
             perror("worker read_full");
             break;
         }
@@ -57,6 +73,7 @@ void run_worker(int worker_id, int task_read_fd, int result_write_fd) {
             break;
         }
 
+        memset(&result, 0, sizeof(result));
         result.job_id = task.job_id;
         result.worker_id = worker_id;
 
@@ -69,17 +86,22 @@ void run_worker(int worker_id, int task_read_fd, int result_write_fd) {
             result.status = 0;
         }
 
-        strncpy(result.filename, task.filename, MAX_FILENAME);
+        strncpy(result.filename, task.filename, MAX_FILENAME - 1);
         result.filename[MAX_FILENAME - 1] = '\0';
 
         ssize_t bytes_written = write_full(result_write_fd, &result, sizeof(result_msg_t));
-        if (bytes_written != sizeof(result_msg_t)) {
+        if (bytes_written != (ssize_t)sizeof(result_msg_t)) {
             perror("worker write_full");
             break;
         }
     }
 
-    close(task_read_fd);
-    close(result_write_fd);
-    exit(0);
+    if (close(task_read_fd) < 0) {
+        perror("close task_read_fd");
+    }
+    if (close(result_write_fd) < 0) {
+        perror("close result_write_fd");
+    }
+
+    _exit(0);
 }
