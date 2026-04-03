@@ -251,22 +251,15 @@ static int find_result_source(worker_info_t workers[],
                 continue;
             }
 
-            ssize_t n = read(workers[i].result_read_fd, result, sizeof(*result));
+            ssize_t n = read_full(workers[i].result_read_fd, result, sizeof(*result));
             if (n == (ssize_t)sizeof(*result)) {
                 return i;
             } else if (n == 0) {
                 fprintf(stderr, "Worker %d closed result pipe unexpectedly\n", i);
                 workers[i].alive = 0;
                 workers[i].busy = 0;
-            } else if (n < 0) {
-                if (errno == EINTR) {
-                    continue;
-                }
-                perror("read result");
-                workers[i].alive = 0;
-                workers[i].busy = 0;
             } else {
-                fprintf(stderr, "Partial read from worker %d\n", i);
+                fprintf(stderr, "Significant read error from workers %d\n", i);
                 workers[i].alive = 0;
                 workers[i].busy = 0;
             }
