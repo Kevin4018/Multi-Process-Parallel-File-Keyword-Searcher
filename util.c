@@ -36,9 +36,6 @@ ssize_t read_full(int fd, void *buf, size_t count) {
             if (errno == EINTR) continue;
             return -1;
         }
-        if (n == 0) {
-            break;
-        }
         total_read += n;
     }
 
