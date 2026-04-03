@@ -295,15 +295,8 @@ static int find_result_source(worker_info_t workers[],
                 fprintf(stderr, "Worker %d closed result pipe unexpectedly\n", i);
                 workers[i].alive = 0;
                 workers[i].busy = 0;
-            } else if (n < 0) {
-                if (errno == EINTR) {
-                    continue;
-                }
-                perror("read_full result");
-                workers[i].alive = 0;
-                workers[i].busy = 0;
             } else {
-                fprintf(stderr, "Short read from worker %d\n", i);
+                fprintf(stderr, "Significant read error from workers %d\n", i);
                 workers[i].alive = 0;
                 workers[i].busy = 0;
             }
