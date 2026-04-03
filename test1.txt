@@ -1,0 +1,4 @@
+error here
+no problem
+fatal error
+error error
