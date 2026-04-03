@@ -23,7 +23,6 @@ typedef struct {
 
 static void usage(const char *progname);
 static int spawn_worker(worker_info_t *worker);
-static void close_worker_parent_fds(worker_info_t *worker);
 static int send_task(worker_info_t *worker, int job_id,
                      const char *filename, const char *keyword);
 static int send_terminate(worker_info_t *worker);
