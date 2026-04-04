@@ -152,15 +152,6 @@ This makes it possible to pass information safely from child processes back to t
 
 ---
 
-## Limitations
-
-* Designed primarily for text files
-* Exact behavior depends on keyword-matching logic
-* Performance depends on number of processes and file sizes
-* Output order may vary depending on process scheduling
-
----
-
 ## Author
 Ziheng Wang
 
