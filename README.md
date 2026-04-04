@@ -1,9 +1,4 @@
 # Multi-Process-Parallel-File-Keyword-Searcher
-Here’s a clean **GitHub-style README** you can use for your project.
-
----
-
-# Multi-Process Parallel File Keyword Searcher
 
 ## Overview
 
