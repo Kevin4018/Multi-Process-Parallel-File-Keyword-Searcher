@@ -2,13 +2,10 @@ CC = gcc
 
 CFLAGS = -Wall -Wextra -std=gnu99 -g
 
-
 OBJS = pfind.o worker.o util.o
 TARGET = pfind
 
-
 all: $(TARGET)
-
 
 $(TARGET): $(OBJS)
 	$(CC) $(CFLAGS) -o $(TARGET) $(OBJS)
