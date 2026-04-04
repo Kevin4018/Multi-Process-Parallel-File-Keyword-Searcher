@@ -12,8 +12,6 @@ The program demonstrates key systems programming concepts including:
 * file I/O
 * process cleanup with `wait()` / `waitpid()`
 
-This project was developed for **CSC209 Assignment 3**.
-
 ---
 
 ## Features
